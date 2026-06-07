@@ -1,0 +1,63 @@
+- name: DNS Tunneling
+  signature: dns_tunnel
+  protocol: UDP
+  port: 53
+  pattern: "length > 200"
+  severity: high
+  description: "Oversized DNS query — possible tunneling"
+
+- name: Port Scan
+  signature: port_scan
+  protocol: TCP
+  port: any
+  pattern: "flags == SYN and count > 20 in 10s"
+  severity: medium
+  description: "Multiple SYN packets — possible port scan"
+
+- name: ICMP Flood
+  signature: icmp_flood
+  protocol: ICMP
+  port: any
+  pattern: "count > 50 in 5s"
+  severity: high
+  description: "ICMP flood detected"
+
+- name: Suspicious Payload
+  signature: suspicious_payload
+  protocol: TCP
+  port: any
+  pattern: "payload contains 'cat /etc' or 'cmd.exe' or 'powershell'"
+  severity: critical
+  description: "Suspicious command pattern in payload"
+
+- name: SSH Brute Force
+  signature: ssh_brute
+  protocol: TCP
+  port: 22
+  pattern: "count > 10 in 60s"
+  severity: high
+  description: "Multiple SSH connections — possible brute force"
+
+- name: HTTP SQL Injection
+  signature: http_sqli
+  protocol: TCP
+  port: 80
+  pattern: "payload contains ' UNION ' or ' OR 1=1' or ' DROP '"
+  severity: critical
+  description: "SQL injection pattern in HTTP traffic"
+
+- name: Large ICMP
+  signature: large_icmp
+  protocol: ICMP
+  port: any
+  pattern: "length > 1000"
+  severity: medium
+  description: "Oversized ICMP packet"
+
+- name: High Bandwidth
+  signature: high_bw
+  protocol: any
+  port: any
+  pattern: "bytes > 1000000 in 60s"
+  severity: low
+  description: "High bandwidth usage detected"
