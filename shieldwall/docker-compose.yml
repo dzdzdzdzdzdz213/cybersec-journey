@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  shieldwall:
+    build:
+      context: ..
+      dockerfile: shieldwall/Dockerfile
+    container_name: shieldwall
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    volumes:
+      - ./shieldwall/backend:/app/backend:ro
+      - ./shieldwall/backend/config.local.yaml:/app/config.local.yaml:ro
+      - shieldwall-data:/app/backend
+      - ./shieldwall/backend/logs:/app/backend/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=2)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Optional: Elasticsearch for log storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: shieldwall-es
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Optional: Kibana for visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: shieldwall-kibana
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  # Optional: Redis for multi-worker support
+  redis:
+    image: redis:7-alpine
+    container_name: shieldwall-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+volumes:
+  shieldwall-data:
+  es-data:
+  redis-data:

@@ -1,34 +1,57 @@
-import socket, struct, time
+import socket, struct, time, random
 from datetime import datetime
+from typing import Optional, Callable
 
 class PacketCapture:
-    def __init__(self, interface=None):
-        self.interface = interface
+    def __init__(self, config: dict):
+        self.config = config
+        cap_cfg = config.get("capture", {})
+        self.interface = cap_cfg.get("interface")
+        self.bpf_filter = cap_cfg.get("bpf_filter", "")
+        self.promiscuous = cap_cfg.get("promiscuous", True)
+        self.snaplen = cap_cfg.get("snaplen", 65535)
+        self.buffer_size = cap_cfg.get("buffer_size", 16777216)
+        self.use_npcap = cap_cfg.get("use_npcap", True)
+        self.mock_mode = cap_cfg.get("mock_mode", False)
+        self.mock_rate = cap_cfg.get("mock_rate", 10)
         self.running = False
         self.callback = None
 
-    def start(self, callback):
+    def start(self, callback: Callable):
         self.running = True
         self.callback = callback
-        self._capture()
+        if self.mock_mode:
+            self._generate_mock()
+        else:
+            self._capture()
 
     def stop(self):
         self.running = False
 
     def _capture(self):
         try:
+            if self.use_npcap:
+                self._capture_npcap()
+            else:
+                self._capture_raw()
+        except Exception as e:
+            print(f"[!] Capture failed: {e}. Falling back to mock.")
+            self._generate_mock()
+
+    def _capture_raw(self):
+        try:
             s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
             if self.interface:
                 s.bind((self.interface, 0))
             s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-            if hasattr(socket, 'SIO_RCVALL'):
-                import win32api, win32con
+            if hasattr(socket, 'SIO_RCVALL') and self.promiscuous:
                 s.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.buffer_size)
             s.settimeout(1.0)
 
             while self.running:
                 try:
-                    raw = s.recvfrom(65535)[0]
+                    raw = s.recvfrom(self.snaplen)[0]
                     pkt = self._parse(raw)
                     if pkt and self.callback:
                         self.callback(pkt)
@@ -41,18 +64,31 @@ class PacketCapture:
             print(f"[!] Raw socket failed: {e}")
             self._capture_pcap()
 
+    def _capture_npcap(self):
+        try:
+            from scapy.all import sniff, IP, TCP, UDP, ICMP, conf
+            if self.use_npcap:
+                conf.use_pcap = True
+            filter_str = self.bpf_filter if self.bpf_filter else None
+            sniff(iface=self.interface, prn=lambda p: self.callback(self._scapy_parse(p)),
+                  filter=filter_str, store=False, promisc=self.promiscuous)
+        except Exception as e:
+            print(f"[!] Npcap/Scapy capture failed ({e}). Using mock data.")
+            self._generate_mock()
+
     def _capture_pcap(self):
         try:
             from scapy.all import sniff, IP, TCP, UDP, ICMP
+            filter_str = self.bpf_filter if self.bpf_filter else None
             sniff(prn=lambda p: self.callback(self._scapy_parse(p)),
-                  store=False, timeout=None)
-        except ImportError:
-            print("[!] Scapy not available. Using mock data.")
+                  filter=filter_str, store=False, timeout=None)
+        except Exception as e:
+            print(f"[!] Packet capture failed ({e}). Using mock data.")
             self._generate_mock()
 
     def _generate_mock(self):
-        import random
         protocols = ["TCP", "UDP", "ICMP"]
+        sleep_time = 1.0 / max(self.mock_rate, 1)
         while self.running:
             pkt = {
                 "timestamp": datetime.now().isoformat(),
@@ -66,7 +102,7 @@ class PacketCapture:
             }
             if self.callback:
                 self.callback(pkt)
-            time.sleep(0.1)
+            time.sleep(sleep_time)
 
     def _scapy_parse(self, pkt):
         try:
@@ -79,7 +115,7 @@ class PacketCapture:
                 result["protocol"] = "TCP"
                 result["sport"] = pkt[TCP].sport
                 result["dport"] = pkt[TCP].dport
-                result["info"] = pkt[TCP].flags if hasattr(pkt[TCP], 'flags') else ""
+                result["info"] = str(pkt[TCP].flags) if hasattr(pkt[TCP], 'flags') else ""
             elif UDP in pkt:
                 result["protocol"] = "UDP"
                 result["sport"] = pkt[UDP].sport

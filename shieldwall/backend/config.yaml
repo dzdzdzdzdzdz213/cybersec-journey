@@ -1,0 +1,119 @@
+# ShieldWall Configuration
+# Copy to config.local.yaml to override defaults
+
+# ===== CAPTURE =====
+capture:
+  interface: null                    # null = auto-detect, or specify (e.g., "eth0", "Ethernet")
+  bpf_filter: ""                     # Berkeley Packet Filter (e.g., "tcp port 80 or udp port 53")
+  promiscuous: true                  # Enable promiscuous mode
+  snaplen: 65535                     # Max bytes per packet to capture
+  buffer_size: 16777216              # Kernel buffer size (16MB)
+  use_npcap: true                    # Try Npcap on Windows (requires admin)
+  mock_mode: false                   # Force mock data generation (for demo/testing)
+  mock_rate: 10                      # Mock packets per second
+
+# ===== DETECTION =====
+detection:
+  rules_dir: "rules"                 # Directory with *.yaml rule files
+  hot_reload: true                   # Watch rules_dir for changes
+  reload_interval: 5                 # Seconds between reload checks
+  default_severity: "medium"         # Fallback if rule missing severity
+  max_alerts_per_second: 100         # Rate limit alerts
+  deduplicate_window: 60             # Seconds to dedupe same signature/src/dst
+  enable_mitre: true                 # Enrich alerts with MITRE ATT&CK tags
+
+# ===== STORAGE =====
+storage:
+  type: "sqlite"                     # sqlite | postgresql | mysql
+  sqlite:
+    path: "shieldwall.db"
+    check_same_thread: false
+    wal_mode: true
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "shieldwall"
+    user: "shieldwall"
+    password: "changeme"
+  retention_days: 30                 # Auto-purge old packets/alerts
+  vacuum_interval: 3600              # Seconds between VACUUM (sqlite)
+
+# ===== OUTPUT SINKS =====
+outputs:
+  - type: "sqlite"                   # Built-in SQLite (always enabled)
+    enabled: true
+  - type: "elasticsearch"
+    enabled: false
+    hosts: ["http://localhost:9200"]
+    index_prefix: "shieldwall"
+    username: ""
+    password: ""
+    bulk_size: 500
+    flush_interval: 5
+  - type: "syslog"
+    enabled: false
+    host: "localhost"
+    port: 514
+    protocol: "udp"                  # udp | tcp
+    facility: "local0"
+    format: "rfc5424"                # rfc5424 | rfc3164 | json
+  - type: "webhook"
+    enabled: false
+    url: "http://localhost:9000/alerts"
+    method: "POST"
+    headers:
+      Authorization: "Bearer ${WEBHOOK_TOKEN}"
+    timeout: 5
+    retry: 3
+  - type: "kafka"
+    enabled: false
+    brokers: ["localhost:9092"]
+    topic: "shieldwall.alerts"
+    compression: "snappy"
+
+# ===== API SERVER =====
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1                         # Use 1 for WebSocket support; >1 needs Redis pub/sub
+  cors_origins: ["*"]
+  api_prefix: "/api"
+  docs_enabled: true
+  rate_limit:
+    enabled: true
+    requests_per_minute: 300
+    burst: 50
+  auth:
+    enabled: false
+    type: "jwt"                      # jwt | api_key | basic
+    jwt_secret: "changeme-in-production"
+    jwt_algorithm: "HS256"
+    jwt_expiry_minutes: 60
+    api_keys: {}                     # key_name: "hashed_key"
+
+# ===== WEBSOCKET =====
+websocket:
+  enabled: true
+  path: "/ws"
+  ping_interval: 30
+  ping_timeout: 10
+  max_message_size: 16384
+
+# ===== LOGGING =====
+logging:
+  level: "INFO"                      # DEBUG | INFO | WARNING | ERROR
+  format: "json"                     # json | text
+  output: "stdout"                   # stdout | file | both
+  file:
+    path: "logs/shieldwall.log"
+    max_size: 10485760               # 10MB
+    backup_count: 5
+  access_log: true
+
+# ===== PLUGINS =====
+plugins:
+  enabled: true
+  directories:
+    - "plugins"
+    - "/etc/shieldwall/plugins"
+  auto_load: true

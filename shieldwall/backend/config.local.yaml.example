@@ -1,0 +1,67 @@
+# ShieldWall Production Overrides
+# Copy this to config.local.yaml and customize
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["https://your-domain.com"]
+  auth:
+    enabled: true
+    type: "jwt"
+    jwt_secret: "REPLACE_WITH_SECURE_RANDOM_SECRET"
+    jwt_expiry_minutes: 60
+  rate_limit:
+    enabled: true
+    requests_per_minute: 500
+    burst: 100
+
+capture:
+  interface: "eth0"
+  bpf_filter: "tcp or udp or icmp"
+  promiscuous: true
+  use_npcap: false
+  mock_mode: false
+
+detection:
+  rules_dir: "rules"
+  hot_reload: true
+  deduplicate_window: 120
+
+storage:
+  type: "postgresql"
+  postgresql:
+    host: "postgres"
+    port: 5432
+    database: "shieldwall"
+    user: "shieldwall"
+    password: "CHANGE_ME"
+  retention_days: 90
+
+outputs:
+  - type: "sqlite"
+    enabled: true
+  - type: "elasticsearch"
+    enabled: true
+    hosts: ["http://elasticsearch:9200"]
+    index_prefix: "shieldwall"
+  - type: "syslog"
+    enabled: true
+    host: "syslog-server"
+    port: 514
+    protocol: "udp"
+    format: "rfc5424"
+  - type: "webhook"
+    enabled: true
+    url: "https://your-siem.com/api/alerts"
+    headers:
+      Authorization: "Bearer ${WEBHOOK_TOKEN}"
+
+logging:
+  level: "INFO"
+  format: "json"
+  output: "both"
+  file:
+    path: "logs/shieldwall.log"
+    max_size: 10485760
+    backup_count: 10
+  access_log: true

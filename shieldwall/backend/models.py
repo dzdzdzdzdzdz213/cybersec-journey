@@ -1,10 +1,15 @@
 import sqlite3, json
 from datetime import datetime
 
-DB_PATH = "shieldwall.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
+def init_db(config: dict = None) -> sqlite3.Connection:
+    if config is None:
+        config = {}
+    path = config.get("storage", {}).get("sqlite", {}).get("path", "shieldwall.db")
+    check_same = config.get("storage", {}).get("sqlite", {}).get("check_same_thread", False)
+    wal = config.get("storage", {}).get("sqlite", {}).get("wal_mode", True)
+    conn = sqlite3.connect(path, check_same_thread=check_same)
+    if wal:
+        conn.execute("PRAGMA journal_mode=WAL")
     c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS packets(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,7 +21,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TEXT, signature TEXT, severity TEXT,
         src TEXT, dst TEXT, protocol TEXT,
-        description TEXT, acknowledged INTEGER DEFAULT 0
+        description TEXT, acknowledged INTEGER DEFAULT 0,
+        mitre TEXT DEFAULT '[]'
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS stats(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,9 +42,11 @@ def save_packet(conn, pkt):
 
 def save_alert(conn, alert):
     c = conn.cursor()
-    c.execute("INSERT INTO alerts(timestamp,signature,severity,src,dst,protocol,description) VALUES(?,?,?,?,?,?,?)",
+    c.execute("""INSERT INTO alerts(timestamp,signature,severity,src,dst,protocol,description,mitre)
+                 VALUES(?,?,?,?,?,?,?,?)""",
               (alert["timestamp"], alert["signature"], alert["severity"],
-               alert["src"], alert["dst"], alert["protocol"], alert["description"]))
+               alert["src"], alert["dst"], alert["protocol"],
+               alert["description"], json.dumps(alert.get("mitre", []))))
     conn.commit()
     return c.lastrowid
 
@@ -57,7 +65,7 @@ def get_alerts(conn, limit=100, offset=0, severity=None, ack=None):
     rows = c.execute(q, params).fetchall()
     return [{"id":r[0],"timestamp":r[1],"signature":r[2],"severity":r[3],
              "src":r[4],"dst":r[5],"protocol":r[6],"description":r[7],
-             "acknowledged":bool(r[8])} for r in rows]
+             "acknowledged":bool(r[8]), "mitre": json.loads(r[9] or "[]")} for r in rows]
 
 def get_packets(conn, limit=100, offset=0, protocol=None):
     c = conn.cursor()
@@ -93,8 +101,8 @@ def get_timeline(conn, interval="1m"):
                         GROUP BY t ORDER BY t DESC LIMIT 60""").fetchall()
     return [{"time": r[0], "count": r[1]} for r in rows]
 
-def ack_alert(conn, alert_id):
+def ack_alert(conn, alert_id, acknowledged=True):
     c = conn.cursor()
-    c.execute("UPDATE alerts SET acknowledged=1 WHERE id=?", (alert_id,))
+    c.execute("UPDATE alerts SET acknowledged=? WHERE id=?", (1 if acknowledged else 0, alert_id))
     conn.commit()
     return c.rowcount > 0
