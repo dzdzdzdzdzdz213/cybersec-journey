@@ -1,7 +1,5 @@
 # 🛡️ ShieldWall — Network Security Monitor
 
-<img src="demo.png" alt="ShieldWall Dashboard" width="100%"/>
-
 A full-featured network security monitoring platform with packet capture, intrusion detection, traffic analysis, and a real-time dashboard.
 
 ## Architecture
